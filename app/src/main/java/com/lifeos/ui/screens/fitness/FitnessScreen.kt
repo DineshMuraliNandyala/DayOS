@@ -325,7 +325,7 @@ private fun StepsCard(steps: Int, goal: Int, onClick: () -> Unit) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Baseline,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "Steps",

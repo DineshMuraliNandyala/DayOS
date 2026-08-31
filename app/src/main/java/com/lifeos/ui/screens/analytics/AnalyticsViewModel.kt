@@ -85,7 +85,7 @@ class AnalyticsViewModel(private val db: LifeOSDatabase) : ViewModel() {
 
         // Streak
         val datesWithActivity = completions
-            .filter { it.completedGoals > 0 }
+            .filter { it.goalsCompleted > 0 }
             .map { it.date }
             .toSet()
         val streak = StreakUseCase.compute(datesWithActivity, emptySet())

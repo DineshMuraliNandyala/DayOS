@@ -339,7 +339,7 @@ private fun NutritionCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Baseline,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = label,
