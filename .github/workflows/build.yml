@@ -3,7 +3,7 @@ name: Build Android App
 on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch: # Allows you to trigger the build manually
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,6 +18,9 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         cache: gradle
+
+    - name: Regenerate Gradle Wrapper
+      run: gradle wrapper --gradle-version 8.7
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
