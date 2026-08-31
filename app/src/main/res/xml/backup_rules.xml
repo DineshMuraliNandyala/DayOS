@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android Auto Backup exclusion rules.
+
+  CRITICAL: The Room database is intentionally excluded from both cloud backup
+  and device-to-device transfer. LifeOS data is private journal content —
+  we do NOT want it silently uploaded to Google Drive.
+
+  The only supported backup path is Settings → Export JSON, which the user
+  controls explicitly.
+
+  Verify this works: after installation, run
+      adb backup -f /tmp/lifeos_backup.ab com.lifeos
+  and confirm the .ab archive does NOT contain the database files.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Exclude Room DB and WAL journal -->
+        <exclude domain="database" path="lifeos.db" />
+        <exclude domain="database" path="lifeos.db-wal" />
+        <exclude domain="database" path="lifeos.db-shm" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="lifeos.db" />
+        <exclude domain="database" path="lifeos.db-wal" />
+        <exclude domain="database" path="lifeos.db-shm" />
+    </device-transfer>
+</data-extraction-rules>

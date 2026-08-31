@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider paths — exposes app cache directory so LifeOS can share
+  encrypted backup files (.lbk) via share sheet without WRITE_EXTERNAL_STORAGE.
+  Only cache-path is exposed: backup files are created there transiently and
+  cleared on the next app launch.
+-->
+<paths>
+    <cache-path name="lifeos_backups" path="." />
+</paths>

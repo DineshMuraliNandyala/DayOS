@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">LifeOS</string>
+
+    <!-- Biometric lock -->
+    <string name="biometric_prompt_title">Unlock LifeOS</string>
+    <string name="biometric_prompt_subtitle">Use biometric or device credential</string>
+    <string name="biometric_prompt_negative">Exit</string>
+
+    <!-- Today tab -->
+    <string name="tab_today">Today</string>
+    <string name="tab_placement">Placement</string>
+    <string name="tab_fitness">Fitness</string>
+    <string name="tab_notes">Notes</string>
+    <string name="tab_analytics">Stats</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Data safety / backup warning -->
+    <string name="backup_warning">Your data is stored only on this device. Use Settings → Export JSON to back it up before a factory reset.</string>
+
+    <!-- Privacy policy URL (replace with real hosted URL before release) -->
+    <string name="privacy_policy_url">https://lifeos.app/privacy</string>
+</resources>

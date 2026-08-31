@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Shell theme for the Activity window before Compose takes over.
+  Compose manages the actual UI theme via LifeOSTheme in Theme.kt.
+  Using Theme.AppCompat.DayNight as the base so the system status bar
+  and navigation bar are styled correctly before the first frame.
+-->
+<resources>
+    <style name="Theme.LifeOS" parent="android:Theme.Material.NoTitleBar">
+        <!-- Transparent window background; Compose paints over this. -->
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>
