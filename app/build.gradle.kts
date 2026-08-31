@@ -56,16 +56,16 @@ android {
         compose = true
         buildConfig = true
     }
-
-    // Export Room schema JSON for migration auditing (commit schemas/ to VCS).
-    room {
-        schemaDirectory("$projectDir/schemas")
+    // Export Room schema JSON for migration auditing
+    ksp {
+        arg("room.schemaLocation", "$projectDir/schemas")
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
     kotlinOptions {
         jvmTarget = "11"
     }
