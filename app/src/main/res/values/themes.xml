@@ -6,7 +6,7 @@
   and navigation bar are styled correctly before the first frame.
 -->
 <resources>
-    <style name="Theme.LifeOS" parent="android:Theme.Material.NoTitleBar">
+    <style name="Theme.LifeOS" parent="@android:style/Theme.Material.NoActionBar">
         <!-- Transparent window background; Compose paints over this. -->
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
