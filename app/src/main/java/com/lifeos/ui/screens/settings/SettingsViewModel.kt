@@ -59,10 +59,20 @@ class SettingsViewModel(
     private val settingsDao = db.settingsDao()
     private val backupManager = BackupManager(context, db)
 
+    // Seed default settings row on first launch so the screen never stays null
+    init {
+        viewModelScope.launch {
+            if (settingsDao.get() == null) {
+                val now = java.time.Instant.now().toString()
+                settingsDao.upsert(SettingsEntity(createdAt = now, updatedAt = now))
+            }
+        }
+    }
+
     // ── Settings state (live from DB) ────────────────────────────────────────
 
     val settings: StateFlow<SettingsEntity?> = settingsDao.observe()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsEntity())
 
     // ── UI state ─────────────────────────────────────────────────────────────
 
