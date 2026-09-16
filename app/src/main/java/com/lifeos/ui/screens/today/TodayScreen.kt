@@ -85,7 +85,8 @@ fun TodayScreen(onNavigateToPlacement: () -> Unit = {}) {
         // ── Greeting ────────────────────────────────────────────────────────
         item(key = "greeting") {
             val dayName = s.today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
-            val greeting = when (s.today.hour) {
+            val hour = java.time.LocalDateTime.now().hour
+            val greeting = when (hour) {
                 in 5..11 -> "Good morning"
                 in 12..17 -> "Good afternoon"
                 else -> "Good evening"

@@ -11,10 +11,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Instant
@@ -121,9 +121,7 @@ class FitnessViewModel(private val db: LifeOSDatabase) : ViewModel() {
         viewModelScope.launch {
             val dateStr = _selectedDate.value.format(fmt)
             val session = dao.getSessionForDate(dateStr) ?: return@launch
-            val allSets = dao.observeSetLogsForDate(dateStr).stateIn(
-                viewModelScope, SharingStarted.Eagerly, emptyList()
-            ).value
+            val allSets = first(dao.observeSetLogsForDate(dateStr))
             val totalVolume = allSets.sumOf { it.weightKg * it.reps }
             val now = Instant.now().toString()
 
@@ -162,9 +160,8 @@ class FitnessViewModel(private val db: LifeOSDatabase) : ViewModel() {
             val dateStr = _selectedDate.value.format(fmt)
             // Auto-start session if needed
             if (dao.getSessionForDate(dateStr) == null) startSession()
-            val setCount = dao.observeSetLogsForDate(dateStr).stateIn(
-                viewModelScope, SharingStarted.Eagerly, emptyList()
-            ).value.count { it.exerciseId == exerciseId }
+            val setCount = first(dao.observeSetLogsForDate(dateStr))
+                .count { it.exerciseId == exerciseId }
             dao.insertSetLog(
                 ExerciseSetLogEntity(
                     exerciseId = exerciseId,

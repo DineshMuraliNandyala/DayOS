@@ -65,7 +65,6 @@ import com.lifeos.LifeOSApp
 import com.lifeos.data.db.entity.ExerciseEntity
 import com.lifeos.data.db.entity.ExerciseSetLogEntity
 import com.lifeos.data.db.entity.WorkoutSessionEntity
-import com.lifeos.ui.screens.fitness.AddExerciseSheet
 import com.lifeos.ui.theme.LocalLifeOSColors
 import com.lifeos.ui.theme.SemanticSuccess
 import com.lifeos.ui.theme.SemanticWarning
