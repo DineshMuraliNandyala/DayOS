@@ -35,19 +35,28 @@ interface FitnessDao {
     @Insert
     suspend fun insertWaterLog(log: WaterLogEntity)
 
+    @Query("SELECT * FROM water_logs WHERE date = :date ORDER BY loggedAt ASC")
+    fun observeWaterLogsForDate(date: String): Flow<List<WaterLogEntity>>
+
     @Query("SELECT COALESCE(SUM(ml), 0) FROM water_logs WHERE date = :date")
     fun observeWaterTotalForDate(date: String): Flow<Int>
 
     @Query("DELETE FROM water_logs WHERE id = :id")
     suspend fun deleteWaterLog(id: Long)
 
-    // ─ Steps ─────────────────────────────────────────────────────────────
+    // ─ Steps (additive log entries, same pattern as protein/water) ──────────
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertStepReading(reading: StepReadingEntity)
+    @Insert
+    suspend fun insertStepLog(reading: StepReadingEntity)
 
-    @Query("SELECT * FROM step_readings WHERE date = :date LIMIT 1")
-    fun observeStepsForDate(date: String): Flow<StepReadingEntity?>
+    @Query("SELECT * FROM step_readings WHERE date = :date ORDER BY syncedAt ASC")
+    fun observeStepLogsForDate(date: String): Flow<List<StepReadingEntity>>
+
+    @Query("SELECT COALESCE(SUM(steps), 0) FROM step_readings WHERE date = :date")
+    fun observeStepsTotalForDate(date: String): Flow<Int>
+
+    @Query("DELETE FROM step_readings WHERE id = :id")
+    suspend fun deleteStepLog(id: Long)
 
     // ─ Exercises ───────────────────────────────────────────────────────────
 
@@ -103,8 +112,14 @@ interface FitnessDao {
     @Query("SELECT * FROM workout_sessions WHERE date = :date LIMIT 1")
     suspend fun getSessionForDate(date: String): WorkoutSessionEntity?
 
+    @Query("SELECT * FROM workout_sessions WHERE date >= :weekStart AND date <= :weekEnd ORDER BY date ASC")
+    fun observeSessionsForWeek(weekStart: String, weekEnd: String): Flow<List<WorkoutSessionEntity>>
+
     @Query("SELECT * FROM workout_sessions ORDER BY date DESC LIMIT 10")
     fun observeRecentSessions(): Flow<List<WorkoutSessionEntity>>
+
+    @Query("SELECT * FROM exercise_set_logs WHERE exerciseId = :exerciseId AND date = :date ORDER BY setNumber ASC")
+    fun observeSetLogsForExerciseAndDate(exerciseId: Long, date: String): Flow<List<ExerciseSetLogEntity>>
 
     @Query("DELETE FROM workout_sessions WHERE id = :id")
     suspend fun deleteWorkoutSession(id: Long)

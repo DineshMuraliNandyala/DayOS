@@ -164,11 +164,27 @@ class PlacementViewModel(private val db: LifeOSDatabase) : ViewModel() {
         }
     }
 
-    // ── URL builder ───────────────────────────────────────────────────────────
+    // ── URL builder (number-first, no slug required) ───────────────────────────
 
+    /**
+     * Builds the most direct URL to the problem using the problem number where possible.
+     *
+     * LeetCode  → leetcode.com/problemset/?search=[number]  (1-click to problem)
+     * Codeforces→ codeforces.com/problemset/problem/ROUND/LETTER  (stored as "1234/A")
+     * HackerRank→ hackerrank.com/challenges/[slug]
+     * GFG       → geeksforgeeks.org/problems/[slug]
+     * CUSTOM    → platformUrl as-is
+     */
     fun buildUrl(problem: ProblemEntity): String? = when (problem.platform) {
-        "LEETCODE" ->
-            (problem.leetcodeSlug ?: problem.platformUrl)?.let { "https://leetcode.com/problems/$it/" }
+        "LEETCODE" -> {
+            val num = problem.number
+            when {
+                num != null && num > 0 -> "https://leetcode.com/problemset/?search=$num"
+                !problem.leetcodeSlug.isNullOrBlank() -> "https://leetcode.com/problems/${problem.leetcodeSlug}/"
+                !problem.platformUrl.isNullOrBlank() -> "https://leetcode.com/problemset/?search=${problem.platformUrl}"
+                else -> null
+            }
+        }
         "CODEFORCES" ->
             problem.platformUrl?.let { "https://codeforces.com/problemset/problem/$it" }
         "HACKERRANK" ->

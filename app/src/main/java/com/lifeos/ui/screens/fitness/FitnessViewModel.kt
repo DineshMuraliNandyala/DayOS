@@ -4,113 +4,146 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeos.data.db.LifeOSDatabase
-import com.lifeos.data.db.entity.ExerciseEntity
 import com.lifeos.data.db.entity.ExerciseSetLogEntity
-import com.lifeos.data.db.entity.StepReadingEntity
 import com.lifeos.data.db.entity.WorkoutSessionEntity
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class FitnessViewModel(private val db: LifeOSDatabase) : ViewModel() {
 
     private val dao = db.fitnessDao()
-    private val settingsDao = db.settingsDao()
+    private val fmt = DateTimeFormatter.ISO_LOCAL_DATE
 
-    val today: LocalDate = LocalDate.now()
-    val todayStr: String = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+    // ── Selected log date ─────────────────────────────────────────────────────
+    private val _selectedDate = MutableStateFlow(LocalDate.now())
 
-    /** "mon" … "sun" — three-letter lowercase weekday key. */
-    val weekdayKey: String = today.dayOfWeek.name.take(3).lowercase()
+    // ── Week range for sessions ───────────────────────────────────────────────
+    private val weekStartFlow = _selectedDate.map { date ->
+        date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).format(fmt)
+    }
+    private val weekEndFlow = _selectedDate.map { date ->
+        date.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY)).format(fmt)
+    }
 
-    // ── Source flows ──────────────────────────────────────────────────────────
+    // ── Programme (all exercises grouped by weekday) ──────────────────────────
+    private val programmeFlow = dao.observeAllActiveExercises().map { list ->
+        val ordered = listOf("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        ordered.associateWith { day -> list.filter { it.weekday == day } }
+    }
 
-    private val exercisesFlow = dao.observeExercisesForWeekday(weekdayKey)
-    private val setLogsFlow = dao.observeSetLogsForDate(todayStr)
-    private val sessionFlow = dao.observeSessionForDate(todayStr)
-    private val stepsFlow = dao.observeStepsForDate(todayStr)
-    private val recentSessionsFlow = dao.observeRecentSessions()
-    private val settingsFlow = settingsDao.observe()
+    // ── Exercises for selected day ────────────────────────────────────────────
+    private val exercisesForDayFlow = _selectedDate.flatMapLatest { date ->
+        val weekday = date.dayOfWeek.name.take(3).lowercase()
+        dao.observeExercisesForWeekday(weekday)
+    }
 
-    // ── UI state ──────────────────────────────────────────────────────────────
+    // ── Set logs for selected day ─────────────────────────────────────────────
+    private val setLogsForDayFlow = _selectedDate.flatMapLatest { date ->
+        dao.observeSetLogsForDate(date.format(fmt))
+    }
 
+    // ── Active session for selected day ───────────────────────────────────────
+    private val sessionForDayFlow = _selectedDate.flatMapLatest { date ->
+        dao.observeSessionForDate(date.format(fmt))
+    }
+
+    // ── Week sessions ─────────────────────────────────────────────────────────
+    private val weekSessionsFlow = combine(weekStartFlow, weekEndFlow) { start, end ->
+        Pair(start, end)
+    }.flatMapLatest { (start, end) ->
+        dao.observeSessionsForWeek(start, end)
+    }
+
+    // ── Combined UI state ─────────────────────────────────────────────────────
     val uiState: StateFlow<FitnessUiState> = combine(
-        exercisesFlow,
-        setLogsFlow,
-        sessionFlow,
-        stepsFlow,
-        recentSessionsFlow,
-    ) { exercises, setLogs, session, stepReading, recentSessions ->
-
-        // Map each exercise to its logged sets today
+        _selectedDate,
+        exercisesForDayFlow,
+        setLogsForDayFlow,
+        sessionForDayFlow,
+        programmeFlow,
+    ) { date, exercises, setLogs, session, programme ->
         val setsByExercise = setLogs.groupBy { it.exerciseId }
-        val exercisesWithSets = exercises.map { exercise ->
-            ExerciseWithSets(
-                exercise = exercise,
-                sets = setsByExercise[exercise.id] ?: emptyList(),
-            )
+        val exercisesWithSets = exercises.map { ex ->
+            ExerciseWithSets(exercise = ex, sets = setsByExercise[ex.id] ?: emptyList())
         }
-
         FitnessUiState(
             isLoading = false,
-            today = today,
-            todayWeekday = weekdayKey,
+            selectedLogDate = date,
+            activeSession = session,
             exercisesWithSets = exercisesWithSets,
-            session = session,
-            sessionActive = session != null && session.completedAt == null,
-            sessionStartedAt = session?.startedAt,
-            stepsTaken = stepReading?.steps ?: 0,
-            recentSessions = recentSessions,
+            programmeByDay = programme,
         )
     }
-        .combine(settingsFlow) { s, settings ->
-            s.copy(stepGoal = settings?.stepGoal ?: 8000)
+        .combine(weekSessionsFlow) { state, weekSessions ->
+            state.copy(weekSessions = weekSessions)
         }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = FitnessUiState(),
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FitnessUiState())
 
-    // ── Workout session lifecycle ──────────────────────────────────────────────
+    // ── Date navigation ───────────────────────────────────────────────────────
 
-    fun startWorkout() {
+    fun setLogDate(date: LocalDate) { _selectedDate.value = date }
+
+    // ── Session lifecycle ─────────────────────────────────────────────────────
+
+    fun startSession() {
         viewModelScope.launch {
-            val existing = dao.getSessionForDate(todayStr)
+            val date = _selectedDate.value
+            val dateStr = date.format(fmt)
+            val existing = dao.getSessionForDate(dateStr)
             if (existing == null) {
-                dao.insertWorkoutSession(
+                val weekday = date.dayOfWeek.name.take(3).lowercase()
+                dao.upsertWorkoutSession(
                     WorkoutSessionEntity(
-                        date = todayStr,
-                        weekday = weekdayKey,
+                        date = dateStr,
+                        weekday = weekday,
                         startedAt = Instant.now().toString(),
                     ),
                 )
             }
-            // If it exists but was completed, leave it (user can review history)
         }
     }
 
     fun finishWorkout() {
         viewModelScope.launch {
-            val session = dao.getSessionForDate(todayStr) ?: return@launch
-            // Compute total volume from today's cached UI state
-            val setLogs = uiState.value.exercisesWithSets.flatMap { it.sets }
-            val totalVolume = setLogs.sumOf { it.weightKg * it.reps }
-            val prCount = setLogs.count { it.isPr }
-            val started = Instant.parse(session.startedAt)
-            val durationMinutes = ((Instant.now().toEpochMilli() - started.toEpochMilli()) / 60_000).toInt()
+            val dateStr = _selectedDate.value.format(fmt)
+            val session = dao.getSessionForDate(dateStr) ?: return@launch
+            val allSets = dao.observeSetLogsForDate(dateStr).stateIn(
+                viewModelScope, SharingStarted.Eagerly, emptyList()
+            ).value
+            val totalVolume = allSets.sumOf { it.weightKg * it.reps }
+            val now = Instant.now().toString()
 
-            dao.updateWorkoutSession(
+            // Persist PRs for each exercise
+            val setsByExercise = allSets.groupBy { it.exerciseId }
+            var prCount = 0
+            setsByExercise.forEach { (exerciseId, sets) ->
+                val bestOneRm = sets.maxOfOrNull { epley1RM(it.weightKg, it.reps) } ?: return@forEach
+                val exercise = dao.getExercise(exerciseId) ?: return@forEach
+                if (exercise.bestPrKg == null || bestOneRm > exercise.bestPrKg) {
+                    dao.upsertExercise(exercise.copy(bestPrKg = bestOneRm, currentPrKg = bestOneRm))
+                    prCount++
+                }
+            }
+
+            dao.upsertWorkoutSession(
                 session.copy(
-                    completedAt = Instant.now().toString(),
-                    durationMinutes = durationMinutes,
+                    completedAt = now,
+                    durationMinutes = ((Instant.now().toEpochMilli() -
+                        Instant.parse(session.startedAt).toEpochMilli()) / 60_000).toInt(),
                     totalVolumeKg = totalVolume,
                     newPrCount = prCount,
                 ),
@@ -118,114 +151,51 @@ class FitnessViewModel(private val db: LifeOSDatabase) : ViewModel() {
         }
     }
 
+    fun deleteSession(id: Long) {
+        viewModelScope.launch { dao.deleteWorkoutSession(id) }
+    }
+
     // ── Set logging ───────────────────────────────────────────────────────────
 
-    /**
-     * Logs a set for [exerciseId]. Automatically detects PRs:
-     * if [weightKg] × [reps] (1RM via Epley formula) exceeds [ExerciseEntity.bestPrKg],
-     * marks the set as a PR and updates both [currentPrKg] and [bestPrKg].
-     */
     fun logSet(exerciseId: Long, weightKg: Double, reps: Int) {
         viewModelScope.launch {
-            val exercise = dao.getExercise(exerciseId) ?: return@launch
-            val todaySets = uiState.value.exercisesWithSets
-                .find { it.exercise.id == exerciseId }?.sets ?: emptyList()
-            val setNumber = todaySets.size + 1
-
-            // Epley 1RM estimate: weight × (1 + reps/30)
-            val estimated1rm = weightKg * (1.0 + reps / 30.0)
-            val isPr = estimated1rm > (exercise.bestPrKg ?: 0.0)
-
+            val dateStr = _selectedDate.value.format(fmt)
+            // Auto-start session if needed
+            if (dao.getSessionForDate(dateStr) == null) startSession()
+            val setCount = dao.observeSetLogsForDate(dateStr).stateIn(
+                viewModelScope, SharingStarted.Eagerly, emptyList()
+            ).value.count { it.exerciseId == exerciseId }
             dao.insertSetLog(
                 ExerciseSetLogEntity(
                     exerciseId = exerciseId,
-                    date = todayStr,
-                    setNumber = setNumber,
+                    date = dateStr,
+                    setNumber = setCount + 1,
                     weightKg = weightKg,
                     reps = reps,
-                    isPr = isPr,
-                ),
-            )
-
-            // Update exercise PR if beaten
-            if (isPr) {
-                dao.updateExercise(
-                    exercise.copy(
-                        currentPrKg = weightKg,
-                        bestPrKg = estimated1rm,
-                    ),
-                )
-            }
-        }
-    }
-
-    fun deleteSet(setLogId: Long) {
-        viewModelScope.launch { dao.deleteSetLog(setLogId) }
-    }
-
-    // ── Steps (manual entry only in prod flavor) ───────────────────────────────
-
-    fun logSteps(steps: Int) {
-        viewModelScope.launch {
-            dao.upsertStepReading(
-                StepReadingEntity(
-                    date = todayStr,
-                    steps = steps,
-                    source = "manual",
+                    loggedAt = Instant.now().toString(),
                 ),
             )
         }
     }
 
-    // ── Exercise CRUD ─────────────────────────────────────────────────────────
-
-    fun addExercise(state: AddExerciseState) {
-        viewModelScope.launch {
-            dao.insertExercise(
-                ExerciseEntity(
-                    name = state.name.trim(),
-                    muscleGroup = state.muscleGroup.trim(),
-                    weekday = state.weekday,
-                    targetSets = state.targetSets.toIntOrNull() ?: 3,
-                    targetReps = state.targetReps.ifBlank { "8-12" },
-                    notes = state.notes.ifBlank { null },
-                    order = 0,
-                    createdAt = Instant.now().toString(),
-                ),
-            )
-        }
+    fun deleteSet(id: Long) {
+        viewModelScope.launch { dao.deleteSetLog(id) }
     }
 
-    fun updateExercise(state: AddExerciseState) {
-        viewModelScope.launch {
-            val existing = dao.getExercise(state.id) ?: return@launch
-            dao.updateExercise(
-                existing.copy(
-                    name = state.name.trim(),
-                    muscleGroup = state.muscleGroup.trim(),
-                    weekday = state.weekday,
-                    targetSets = state.targetSets.toIntOrNull() ?: existing.targetSets,
-                    targetReps = state.targetReps.ifBlank { existing.targetReps },
-                    notes = state.notes.ifBlank { null },
-                ),
-            )
-        }
+    // ── Exercise management ───────────────────────────────────────────────────
+
+    fun saveExercise(exercise: com.lifeos.data.db.entity.ExerciseEntity) {
+        viewModelScope.launch { dao.upsertExercise(exercise) }
     }
 
     fun archiveExercise(id: Long) {
         viewModelScope.launch { dao.archiveExercise(id) }
     }
 
-    fun exerciseToEditState(exercise: ExerciseEntity): AddExerciseState =
-        AddExerciseState(
-            id = exercise.id,
-            name = exercise.name,
-            muscleGroup = exercise.muscleGroup,
-            weekday = exercise.weekday,
-            targetSets = exercise.targetSets.toString(),
-            targetReps = exercise.targetReps,
-            notes = exercise.notes ?: "",
-        )
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun epley1RM(weight: Double, reps: Int): Double =
+        if (reps == 1) weight else weight * (1.0 + reps / 30.0)
 
     // ── Factory ───────────────────────────────────────────────────────────────
 

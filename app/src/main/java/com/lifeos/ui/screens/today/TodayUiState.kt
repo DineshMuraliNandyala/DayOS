@@ -3,32 +3,44 @@ package com.lifeos.ui.screens.today
 import com.lifeos.data.db.entity.DailyGoalEntity
 import com.lifeos.data.db.entity.HobbyEntity
 import com.lifeos.data.db.entity.JournalEntryEntity
+import com.lifeos.data.db.entity.ProteinLogEntity
+import com.lifeos.data.db.entity.StepReadingEntity
+import com.lifeos.data.db.entity.WaterLogEntity
 import java.time.LocalDate
 
-/**
- * Immutable snapshot of everything the Today screen needs to render.
- * Produced by [TodayViewModel.uiState] as a [StateFlow].
- */
 data class TodayUiState(
+    val isLoading: Boolean = true,
     val today: LocalDate = LocalDate.now(),
-    val displayName: String = "",
+
+    // ── Goals / hobbies ──────────────────────────────────────────────────────
+    val goals: List<DailyGoalEntity> = emptyList(),
+    val completions: Map<Long, Boolean> = emptyMap(),
+    val hobbies: List<HobbyEntity> = emptyList(),
+    val hobbyLogs: Map<Long, Int> = emptyMap(),   // hobbyId -> minutes
+
+    // ── Nutrition / activity totals ──────────────────────────────────────────
+    val proteinGrams: Int = 0,
+    val waterMl: Int = 0,
+    val stepsTotal: Int = 0,
+
+    // ── Individual log entries (for correction / deletion) ───────────────────
+    val proteinLogs: List<ProteinLogEntity> = emptyList(),
+    val waterLogs: List<WaterLogEntity> = emptyList(),
+    val stepLogs: List<StepReadingEntity> = emptyList(),
+
+    // ── Journal ──────────────────────────────────────────────────────────────
+    val journalEntry: JournalEntryEntity? = null,
+
+    // ── Placement ────────────────────────────────────────────────────────────
     val dueRevisionCount: Int = 0,
 
-    // Goals for today's weekday (already filtered)
-    val goals: List<DailyGoalEntity> = emptyList(),
-    // goalId → completed flag
-    val completions: Map<Long, Boolean> = emptyMap(),
-
-    // Hobbies for today's weekday (already filtered)
-    val hobbies: List<HobbyEntity> = emptyList(),
-    // hobbyId → logged minutes (0 = not logged)
-    val hobbyLogs: Map<Long, Int> = emptyMap(),
-
-    val proteinGrams: Int = 0,
+    // ── Settings ─────────────────────────────────────────────────────────────
+    val displayName: String = "",
     val proteinGoal: Int = 150,
-    val waterMl: Int = 0,
     val waterGoal: Int = 2500,
+    val stepGoal: Int = 8000,
 
-    val journalEntry: JournalEntryEntity? = null,
-    val isLoading: Boolean = true,
+    // ── Streaks ──────────────────────────────────────────────────────────────
+    val currentStreak: Int = 0,
+    val gymStreak: Int = 0,
 )

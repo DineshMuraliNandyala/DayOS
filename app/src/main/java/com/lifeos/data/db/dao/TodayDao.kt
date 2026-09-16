@@ -83,6 +83,12 @@ interface TodayDao {
     @Insert
     suspend fun insertProteinLog(log: com.lifeos.data.db.entity.ProteinLogEntity)
 
+    @Query("SELECT * FROM protein_logs WHERE date = :date ORDER BY loggedAt ASC")
+    fun observeProteinLogsForDate(date: String): Flow<List<com.lifeos.data.db.entity.ProteinLogEntity>>
+
+    @Query("DELETE FROM protein_logs WHERE id = :id")
+    suspend fun deleteProteinLog(id: Long)
+
     // ─ Spaced revision count (for revision banner on Today) ───────────────
 
     @Query("SELECT COUNT(*) FROM spaced_revisions WHERE dueDate <= :today")

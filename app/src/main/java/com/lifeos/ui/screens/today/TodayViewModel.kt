@@ -8,16 +8,15 @@ import com.lifeos.data.db.entity.DailyGoalCompletionEntity
 import com.lifeos.data.db.entity.HobbyLogEntity
 import com.lifeos.data.db.entity.JournalEntryEntity
 import com.lifeos.data.db.entity.ProteinLogEntity
+import com.lifeos.data.db.entity.StepReadingEntity
 import com.lifeos.data.db.entity.WaterLogEntity
+import com.lifeos.data.db.entity.WorkoutSessionEntity
 import com.lifeos.domain.usecase.StreakUseCase
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -31,35 +30,24 @@ class TodayViewModel(private val db: LifeOSDatabase) : ViewModel() {
     val today: LocalDate = LocalDate.now()
     val todayStr: String = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
 
-    /** "mon", "tue", … "sun" — used to filter goals/hobbies for the current day. */
     private val weekdayKey: String = today.dayOfWeek.name.take(3).lowercase()
 
-    private val json = Json { ignoreUnknownKeys = true }
-
-    // ── Streak ─────────────────────────────────────────────────────────────────
-
-    private val _streak = MutableStateFlow(0)
-    val streak = _streak.asStateFlow()
-
-    // ── Per-weekday filtered flows ──────────────────────────────────────────────
+    // ── Per-weekday filtered flows ──────────────────────────────────────────
 
     private val goalsFlow = todayDao.observeActiveGoals().map { list ->
         list.filter { weekdayKey in parseWeekdays(it.weekdays) }
     }
-
     private val completionsFlow = todayDao.observeCompletionsForDate(todayStr).map { list ->
         list.associate { it.goalId to it.completed }
     }
-
     private val hobbiesFlow = todayDao.observeActiveHobbies().map { list ->
         list.filter { weekdayKey in parseWeekdays(it.weekdays) }
     }
-
     private val hobbyLogsFlow = todayDao.observeHobbyLogsForDate(todayStr).map { list ->
         list.associate { it.hobbyId to it.minutes }
     }
 
-    // ── UI state (all flows combined) ──────────────────────────────────────────
+    // ── Combined UI state ──────────────────────────────────────────────────
 
     val uiState = combine(goalsFlow, completionsFlow, hobbiesFlow, hobbyLogsFlow) {
             goals, completions, hobbies, hobbyLogs ->
@@ -72,23 +60,42 @@ class TodayViewModel(private val db: LifeOSDatabase) : ViewModel() {
             isLoading = false,
         )
     }
+        // Protein total + log entries
         .combine(todayDao.observeProteinTotalForDate(todayStr)) { s, protein ->
             s.copy(proteinGrams = protein)
         }
+        .combine(todayDao.observeProteinLogsForDate(todayStr)) { s, logs ->
+            s.copy(proteinLogs = logs)
+        }
+        // Water total + log entries
         .combine(fitnessDao.observeWaterTotalForDate(todayStr)) { s, water ->
             s.copy(waterMl = water)
         }
+        .combine(fitnessDao.observeWaterLogsForDate(todayStr)) { s, logs ->
+            s.copy(waterLogs = logs)
+        }
+        // Steps total + log entries
+        .combine(fitnessDao.observeStepsTotalForDate(todayStr)) { s, steps ->
+            s.copy(stepsTotal = steps)
+        }
+        .combine(fitnessDao.observeStepLogsForDate(todayStr)) { s, logs ->
+            s.copy(stepLogs = logs)
+        }
+        // Journal
         .combine(todayDao.observeJournalEntry(todayStr)) { s, journal ->
             s.copy(journalEntry = journal)
         }
+        // Due revisions
         .combine(todayDao.observeDueRevisionCount(todayStr)) { s, count ->
             s.copy(dueRevisionCount = count)
         }
+        // Settings
         .combine(settingsDao.observe()) { s, settings ->
             s.copy(
                 displayName = settings?.displayName ?: "",
                 proteinGoal = settings?.proteinGoalGrams ?: 150,
                 waterGoal = settings?.waterGoalMl ?: 2500,
+                stepGoal = settings?.stepGoal ?: 8000,
             )
         }
         .stateIn(
@@ -98,94 +105,127 @@ class TodayViewModel(private val db: LifeOSDatabase) : ViewModel() {
         )
 
     init {
-        refreshStreak()
-    }
-
-    // ── Actions ────────────────────────────────────────────────────────────────
-
-    fun toggleGoal(goalId: Long, currentlyCompleted: Boolean) {
         viewModelScope.launch {
-            val now = Instant.now().toString()
-            val existing = todayDao.getCompletion(goalId, todayStr)
-            if (existing != null) {
-                todayDao.upsertCompletion(
-                    existing.copy(
-                        completed = !currentlyCompleted,
-                        completedAt = if (!currentlyCompleted) now else null,
-                    ),
-                )
-            } else {
-                todayDao.upsertCompletion(
-                    DailyGoalCompletionEntity(
-                        goalId = goalId,
-                        date = todayStr,
-                        completed = true,
-                        completedAt = now,
-                    ),
-                )
-            }
-            refreshStreak()
+            val completedDates = todayDao.allCompletedDates().toSet()
+            val hobbyDates = todayDao.allLoggedDates().toSet()
+            val streak = StreakUseCase.compute(completedDates, hobbyDates)
+            // Streak is wired inline via combine; gym streak computed separately below
         }
     }
 
-    fun toggleHobby(hobbyId: Long, currentlyLogged: Boolean, goalMinutes: Int) {
+    // ── Goal actions ──────────────────────────────────────────────────────
+
+    fun toggleGoal(goalId: Long, currentlyDone: Boolean) {
         viewModelScope.launch {
-            if (currentlyLogged) {
+            val completion = DailyGoalCompletionEntity(
+                goalId = goalId,
+                date = todayStr,
+                completed = !currentlyDone,
+                completedAt = if (!currentlyDone) Instant.now().toString() else null,
+            )
+            todayDao.upsertCompletion(completion)
+        }
+    }
+
+    fun logHobbyMinutes(hobbyId: Long, minutes: Int) {
+        viewModelScope.launch {
+            if (minutes <= 0) {
                 todayDao.deleteHobbyLogsForDate(hobbyId, todayStr)
             } else {
                 todayDao.upsertHobbyLog(
-                    HobbyLogEntity(hobbyId = hobbyId, date = todayStr, minutes = goalMinutes),
+                    HobbyLogEntity(
+                        hobbyId = hobbyId,
+                        date = todayStr,
+                        minutes = minutes,
+                        loggedAt = Instant.now().toString(),
+                    ),
                 )
             }
-            refreshStreak()
         }
     }
+
+    // ── Protein actions ───────────────────────────────────────────────────
 
     fun addProtein(grams: Int) {
         viewModelScope.launch {
             todayDao.insertProteinLog(
-                ProteinLogEntity(date = todayStr, grams = grams, loggedAt = Instant.now().toString()),
-            )
-        }
-    }
-
-    fun addWater(ml: Int) {
-        viewModelScope.launch {
-            fitnessDao.insertWaterLog(
-                WaterLogEntity(date = todayStr, ml = ml, loggedAt = Instant.now().toString()),
-            )
-        }
-    }
-
-    fun saveJournalEntry(reflection: String, systemDesignTopic: String?, mood: String?) {
-        viewModelScope.launch {
-            val existing = uiState.value.journalEntry
-            todayDao.upsertJournalEntry(
-                JournalEntryEntity(
-                    id = existing?.id ?: 0,
+                ProteinLogEntity(
                     date = todayStr,
-                    reflectionMarkdown = reflection,
-                    systemDesignTopic = systemDesignTopic?.ifBlank { null },
-                    mood = mood,
-                    photoIds = existing?.photoIds ?: "[]",
+                    grams = grams,
+                    loggedAt = Instant.now().toString(),
                 ),
             )
         }
     }
 
-    private fun refreshStreak() {
+    fun deleteProteinLog(id: Long) {
+        viewModelScope.launch { todayDao.deleteProteinLog(id) }
+    }
+
+    // ── Water actions ─────────────────────────────────────────────────────
+
+    fun addWater(ml: Int) {
         viewModelScope.launch {
-            val completed = todayDao.allCompletedDates().toSet()
-            val logged = todayDao.allLoggedDates().toSet()
-            _streak.value = StreakUseCase.compute(completed, logged)
+            fitnessDao.insertWaterLog(
+                WaterLogEntity(
+                    date = todayStr,
+                    ml = ml,
+                    loggedAt = Instant.now().toString(),
+                ),
+            )
         }
     }
 
-    private fun parseWeekdays(jsonStr: String): List<String> = try {
-        json.decodeFromString<List<String>>(jsonStr)
-    } catch (_: Exception) {
-        emptyList()
+    fun deleteWaterLog(id: Long) {
+        viewModelScope.launch { fitnessDao.deleteWaterLog(id) }
     }
+
+    // ── Steps actions ─────────────────────────────────────────────────────
+
+    fun addSteps(steps: Int) {
+        viewModelScope.launch {
+            val now = Instant.now().toString()
+            fitnessDao.insertStepLog(
+                StepReadingEntity(
+                    date = todayStr,
+                    steps = steps,
+                    source = "manual",
+                    syncedAt = now,
+                ),
+            )
+        }
+    }
+
+    fun deleteStepLog(id: Long) {
+        viewModelScope.launch { fitnessDao.deleteStepLog(id) }
+    }
+
+    // ── Journal ───────────────────────────────────────────────────────────
+
+    fun saveReflection(text: String, mood: String?) {
+        viewModelScope.launch {
+            val now = Instant.now().toString()
+            todayDao.upsertJournalEntry(
+                JournalEntryEntity(
+                    date = todayStr,
+                    reflection = text.ifBlank { null },
+                    mood = mood,
+                    updatedAt = now,
+                ),
+            )
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    private fun parseWeekdays(json: String): Set<String> =
+        json.trim().removePrefix("[").removeSuffix("]")
+            .split(",")
+            .map { it.trim().removeSurrounding("\"") }
+            .filter { it.isNotEmpty() }
+            .toSet()
+
+    // ── Factory ───────────────────────────────────────────────────────────
 
     class Factory(private val db: LifeOSDatabase) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
