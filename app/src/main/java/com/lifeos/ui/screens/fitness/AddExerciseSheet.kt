@@ -37,30 +37,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.lifeos.data.db.entity.ExerciseEntity
 import com.lifeos.ui.theme.LocalLifeOSColors
 import com.lifeos.ui.theme.SemanticDanger
+import java.time.Instant
 
 private val WEEKDAYS = listOf(
     "mon" to "Mon", "tue" to "Tue", "wed" to "Wed",
     "thu" to "Thu", "fri" to "Fri", "sat" to "Sat", "sun" to "Sun",
 )
 
+/**
+ * Bottom sheet for adding or editing an [ExerciseEntity].
+ *
+ * @param initial  null = add new exercise; non-null = edit existing
+ * @param onSave   called with the fully-formed [ExerciseEntity] to upsert
+ * @param onArchive called with the exercise id when the user wants to archive it
+ * @param onDismiss called when the sheet should close
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddExerciseSheet(
-    initial: AddExerciseState = AddExerciseState(),
-    onSave: (AddExerciseState) -> Unit,
+    initial: ExerciseEntity? = null,
+    onSave: (ExerciseEntity) -> Unit,
     onArchive: ((Long) -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
+    val isEditing = initial != null
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var name by rememberSaveable { mutableStateOf(initial.name) }
-    var muscleGroup by rememberSaveable { mutableStateOf(initial.muscleGroup) }
-    var weekday by rememberSaveable { mutableStateOf(initial.weekday) }
-    var targetSets by rememberSaveable { mutableStateOf(initial.targetSets) }
-    var targetReps by rememberSaveable { mutableStateOf(initial.targetReps) }
-    var notes by rememberSaveable { mutableStateOf(initial.notes) }
+    var name        by rememberSaveable { mutableStateOf(initial?.name        ?: "") }
+    var muscleGroup by rememberSaveable { mutableStateOf(initial?.muscleGroup ?: "") }
+    var weekday     by rememberSaveable { mutableStateOf(initial?.weekday     ?: "mon") }
+    var targetSets  by rememberSaveable { mutableStateOf(initial?.targetSets?.toString() ?: "3") }
+    var targetReps  by rememberSaveable { mutableStateOf(initial?.targetReps  ?: "8-12") }
+    var notes       by rememberSaveable { mutableStateOf(initial?.notes       ?: "") }
 
     val canSave = name.isNotBlank()
 
@@ -78,7 +89,7 @@ fun AddExerciseSheet(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                text = if (initial.isEditing) "Edit Exercise" else "Add Exercise",
+                text = if (isEditing) "Edit Exercise" else "Add Exercise",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -154,15 +165,15 @@ fun AddExerciseSheet(
                 maxLines = 3,
             )
 
-            // Actions
+            // Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (initial.isEditing && onArchive != null) {
+                if (isEditing && onArchive != null) {
                     OutlinedButton(
-                        onClick = { onArchive(initial.id); onDismiss() },
+                        onClick = { onArchive(initial!!.id); onDismiss() },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = SemanticDanger),
                         border = BorderStroke(1.dp, SemanticDanger),
                     ) { Text("Archive") }
@@ -171,16 +182,34 @@ fun AddExerciseSheet(
                 TextButton(onClick = onDismiss) { Text("Cancel") }
                 Button(
                     onClick = {
-                        onSave(AddExerciseState(
-                            id = initial.id,
-                            name = name, muscleGroup = muscleGroup,
-                            weekday = weekday, targetSets = targetSets,
-                            targetReps = targetReps, notes = notes,
-                        ))
+                        val now = Instant.now().toString()
+                        val entity = if (initial != null) {
+                            // editing — preserve id, bestPrKg, etc.
+                            initial.copy(
+                                name = name.trim(),
+                                muscleGroup = muscleGroup.trim(),
+                                weekday = weekday,
+                                targetSets = targetSets.toIntOrNull() ?: 3,
+                                targetReps = targetReps.ifBlank { "8-12" },
+                                notes = notes.ifBlank { null },
+                            )
+                        } else {
+                            // new exercise
+                            ExerciseEntity(
+                                name = name.trim(),
+                                muscleGroup = muscleGroup.trim(),
+                                weekday = weekday,
+                                targetSets = targetSets.toIntOrNull() ?: 3,
+                                targetReps = targetReps.ifBlank { "8-12" },
+                                notes = notes.ifBlank { null },
+                                createdAt = now,
+                            )
+                        }
+                        onSave(entity)
                         onDismiss()
                     },
                     enabled = canSave,
-                ) { Text(if (initial.isEditing) "Save" else "Add") }
+                ) { Text(if (isEditing) "Save" else "Add") }
             }
 
             Spacer(Modifier.height(24.dp))
