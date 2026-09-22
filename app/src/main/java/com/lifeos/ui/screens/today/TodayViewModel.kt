@@ -137,7 +137,6 @@ class TodayViewModel(private val db: LifeOSDatabase) : ViewModel() {
                         hobbyId = hobbyId,
                         date = todayStr,
                         minutes = minutes,
-                        loggedAt = Instant.now().toString(),
                     ),
                 )
             }
@@ -204,13 +203,11 @@ class TodayViewModel(private val db: LifeOSDatabase) : ViewModel() {
 
     fun saveReflection(text: String, mood: String?) {
         viewModelScope.launch {
-            val now = Instant.now().toString()
             todayDao.upsertJournalEntry(
                 JournalEntryEntity(
                     date = todayStr,
-                    reflection = text.ifBlank { null },
+                    reflectionMarkdown = text,
                     mood = mood,
-                    updatedAt = now,
                 ),
             )
         }

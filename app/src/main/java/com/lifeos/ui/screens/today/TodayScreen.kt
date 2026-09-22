@@ -171,7 +171,7 @@ fun TodayScreen(onNavigateToPlacement: () -> Unit = {}) {
             items(s.goals, key = { "goal_${it.id}" }) { goal ->
                 val done = s.completions[goal.id] == true
                 GoalRow(
-                    label = goal.name,
+                    label = goal.title,
                     done = done,
                     onToggle = { vm.toggleGoal(goal.id, done) },
                 )
@@ -493,7 +493,7 @@ private fun JournalCard(
     entry: com.lifeos.data.db.entity.JournalEntryEntity?,
     onSave: (String, String?) -> Unit,
 ) {
-    var text by rememberSaveable { mutableStateOf(entry?.reflection ?: "") }
+    var text by rememberSaveable { mutableStateOf(entry?.reflectionMarkdown ?: "") }
     var selectedMood by rememberSaveable { mutableStateOf(entry?.mood) }
     val moods = listOf("great" to "😄", "good" to "🙂", "okay" to "😐", "low" to "😔", "rough" to "😞")
 

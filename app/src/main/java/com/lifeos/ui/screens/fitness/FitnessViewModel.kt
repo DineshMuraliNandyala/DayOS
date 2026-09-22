@@ -121,16 +121,16 @@ class FitnessViewModel(private val db: LifeOSDatabase) : ViewModel() {
         viewModelScope.launch {
             val dateStr = _selectedDate.value.format(fmt)
             val session = dao.getSessionForDate(dateStr) ?: return@launch
-            val allSets = first(dao.observeSetLogsForDate(dateStr))
+            val allSets = dao.observeSetLogsForDate(dateStr).first()
             val totalVolume = allSets.sumOf { it.weightKg * it.reps }
             val now = Instant.now().toString()
 
-            // Persist PRs for each exercise
+            // Persist PRs for each exercise using a for loop (forEach can't call suspend fns)
             val setsByExercise = allSets.groupBy { it.exerciseId }
             var prCount = 0
-            setsByExercise.forEach { (exerciseId, sets) ->
-                val bestOneRm = sets.maxOfOrNull { epley1RM(it.weightKg, it.reps) } ?: return@forEach
-                val exercise = dao.getExercise(exerciseId) ?: return@forEach
+            for ((exerciseId, sets) in setsByExercise) {
+                val bestOneRm = sets.maxOfOrNull { s -> epley1RM(s.weightKg, s.reps) } ?: continue
+                val exercise = dao.getExercise(exerciseId) ?: continue
                 if (exercise.bestPrKg == null || bestOneRm > exercise.bestPrKg) {
                     dao.upsertExercise(exercise.copy(bestPrKg = bestOneRm, currentPrKg = bestOneRm))
                     prCount++
@@ -160,7 +160,7 @@ class FitnessViewModel(private val db: LifeOSDatabase) : ViewModel() {
             val dateStr = _selectedDate.value.format(fmt)
             // Auto-start session if needed
             if (dao.getSessionForDate(dateStr) == null) startSession()
-            val setCount = first(dao.observeSetLogsForDate(dateStr))
+            val setCount = dao.observeSetLogsForDate(dateStr).first()
                 .count { it.exerciseId == exerciseId }
             dao.insertSetLog(
                 ExerciseSetLogEntity(
@@ -169,7 +169,6 @@ class FitnessViewModel(private val db: LifeOSDatabase) : ViewModel() {
                     setNumber = setCount + 1,
                     weightKg = weightKg,
                     reps = reps,
-                    loggedAt = Instant.now().toString(),
                 ),
             )
         }
